@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>CYBER STARFIGHTER 3D</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <!-- Lucide Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.1/dist/umd/lucide.min.js"></script>
+    <!-- Three.js (3D Library) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@700;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: none;
+            overflow: hidden;
+            background-color: #030712;
+        }
+        .font-mono-num {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .glass {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .glow-text {
+            text-shadow: 0 0 15px rgba(6, 182, 212, 0.6);
+        }
+        .glow-danger {
+            text-shadow: 0 0 25px rgba(244, 63, 94, 0.9), 0 0 50px rgba(225, 29, 72, 0.7);
+        }
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 36px;
+            height: 36px;
+            pointer-events: none;
+            z-index: 15;
+            opacity: 0.85;
+            transition: transform 0.05s ease-out;
+        }
+    </style>
+</head>
+<body class="select-none text-slate-100">
+
+    <!-- 3D Canvas Container -->
+    <div id="canvasContainer" class="absolute inset-0 z-0"></div>
+
+    <!-- タイムアタック用 10秒前デカ文字カウントダウン -->
+    <div id="countdownOverlay" class="absolute inset-0 z-20 pointer-events-none flex items-center justify-center hidden">
+        <span id="countdownText" class="text-8xl sm:text-9xl font-black text-rose-500 font-mono-num animate-ping glow-danger">10</span>
+    </div>
+
+    <!-- 照準ポインター (Reticle) -->
+    <div id="crosshair" class="crosshair flex items-center justify-center">
+        <svg viewBox="0 0 100 100" class="w-full h-full text-cyan-400 stroke-current fill-none stroke-[3] drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]">
+            <circle cx="50" cy="50" r="38" stroke-dasharray="6 4" class="animate-spin" style="animation-duration: 12s;" />
+            <circle cx="50" cy="50" r="16" />
+            <circle cx="50" cy="50" r="3" class="fill-cyan-300" />
+            <line x1="50" y1="5" x2="50" y2="22" />
+            <line x1="50" y1="78" x2="50" y2="95" />
+            <line x1="5" y1="50" x2="22" y2="50" />
+            <line x1="78" y1="50" x2="95" y2="50" />
+        </svg>
+    </div>
+
+    <!-- プレイ中 UI Overlay -->
+    <div id="inGameUI" class="absolute inset-0 z-10 pointer-events-none p-4 flex flex-col justify-between hidden">
+        <!-- ヘッダー (スコア・コイン・HP) -->
+        <header class="flex justify-between items-center max-w-4xl mx-auto w-full pointer-events-auto">
+            <div class="glass px-4 py-2 rounded-2xl flex items-center gap-3 border border-slate-800 shadow-2xl">
+                <div class="p-2 bg-gradient-to-tr from-cyan-500 to-blue-600 text-slate-950 rounded-xl font-black">
+                    <i data-lucide="rocket" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 class="text-xs font-bold text-slate-400">CYBER STARFIGHTER</h1>
+                    <div class="flex items-center gap-4">
+                        <span class="text-xs font-semibold text-cyan-400">SCORE: <strong id="scoreDisplay" class="text-base font-mono-num font-bold text-white">0</strong></span>
+                        <span class="text-xs font-semibold text-amber-400">COINS: <strong id="coinDisplay" class="text-base font-mono-num font-bold text-white">0</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- シールド (HP) & STAGE & ポーズボタン -->
+            <div class="flex items-center gap-3">
+                <div class="glass px-4 py-2 rounded-2xl flex items-center gap-3 border border-slate-800 shadow-2xl">
+                    <div class="text-right pr-2 border-r border-slate-700">
+                        <span id="modeLabel" class="text-[10px] text-indigo-400 font-bold block uppercase">STAGE</span>
+                        <span id="waveDisplay" class="text-sm font-black text-white font-mono-num">STAGE 1</span>
+                    </div>
+                    <i data-lucide="shield" class="w-5 h-5 text-cyan-400"></i>
+                    <div>
+                        <span class="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Shield</span>
+                        <div class="w-24 sm:w-28 bg-slate-800 h-2.5 rounded-full overflow-hidden border border-slate-700">
+                            <div id="hpBar" class="bg-gradient-to-r from-cyan-400 to-indigo-500 h-full w-full transition-all duration-200"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ポーズボタン -->
+                <button onclick="togglePause()" class="glass p-3 rounded-2xl hover:bg-slate-800 text-cyan-400 border border-slate-700 transition shadow-2xl active:scale-95">
+                    <i data-lucide="pause" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- ボス専用HPゲージ（ボス襲来時表示） -->
+        <div id="bossHpContainer" class="max-w-md mx-auto w-full px-4 pt-2 pointer-events-auto hidden">
+            <div class="glass p-3 rounded-2xl border border-rose-500/50 shadow-2xl bg-rose-950/40 text-center space-y-1">
+                <div class="flex justify-between items-center text-xs font-black px-1">
+                    <span id="bossNameDisplay" class="text-rose-400 tracking-wider flex items-center gap-1">
+                        <i data-lucide="skull" class="w-4 h-4 text-rose-500 animate-pulse"></i> WARNING: CRIMSON DREADNOUGHT
+                    </span>
+                    <span id="bossHpPercent" class="text-white font-mono-num">100%</span>
+                </div>
+                <div class="w-full bg-slate-900 h-3 rounded-full overflow-hidden border border-rose-500/40">
+                    <div id="bossHpBar" class="bg-gradient-to-r from-rose-600 via-red-500 to-amber-400 h-full w-full transition-all duration-150"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center pointer-events-none pb-4">
+            <p class="text-xs text-slate-300 bg-slate-900/80 backdrop-blur-md px-4 py-1.5 rounded-full border border-cyan-500/40 shadow-lg inline-block">
+                🚀 矢印キー/WASD または マウス/指で移動 ｜ [SPACE] / クリックで発射 ｜ [ESC] ポーズ
+            </p>
+        </div>
+    </div>
+
+    <!-- ポーズ（一時停止）メニュー -->
+    <div id="pauseOverlay" class="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+        <div class="glass max-w-sm w-full rounded-3xl p-6 text-center border border-cyan-500/40 space-y-6 shadow-2xl">
+            <div class="space-y-1">
+                <div class="w-12 h-12 bg-cyan-500/20 text-cyan-400 rounded-2xl flex items-center justify-center mx-auto border border-cyan-500/40">
+                    <i data-lucide="pause" class="w-6 h-6"></i>
+                </div>
+                <h2 class="text-2xl font-black text-white tracking-wider pt-2">PAUSE</h2>
+                <p id="pauseSubtitle" class="text-xs text-slate-400">作戦一時停止中</p>
+            </div>
+
+            <div class="space-y-3">
+                <button onclick="togglePause()" class="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-black rounded-2xl text-sm transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2">
+                    <i data-lucide="play" class="w-4 h-4"></i>
+                    ゲームに戻る
+                </button>
+                <button onclick="quitToLobby()" id="pauseQuitBtn" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-rose-400 hover:text-rose-300 border border-rose-500/30 font-bold rounded-2xl text-sm transition flex items-center justify-center gap-2">
+                    <i data-lucide="home" class="w-4 h-4"></i>
+                    基地に帰る（出撃中止）
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ホーム画面（ロビー） -->
+    <div id="homeOverlay" class="absolute inset-0 z-20 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="glass max-w-xl w-full rounded-3xl p-6 sm:p-8 border border-cyan-500/30 shadow-2xl space-y-6">
+            
+            <div class="flex justify-between items-center border-b border-slate-800 pb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-gradient-to-tr from-cyan-500 to-indigo-600 rounded-2xl flex items-center justify-center text-slate-950 shadow-lg shadow-cyan-500/30">
+                        <i data-lucide="space" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl sm:text-2xl font-black text-white tracking-wider glow-text">CYBER STARFIGHTER</h2>
+                        <p class="text-xs text-slate-400">基地司令部 - 準備完了</p>
+                    </div>
+                </div>
+                <div class="glass px-3 py-1.5 rounded-xl border border-amber-500/30 flex items-center gap-2">
+                    <i data-lucide="coins" class="w-4 h-4 text-amber-400"></i>
+                    <span id="lobbyCoins" class="text-sm font-black text-amber-400 font-mono-num">0</span>
+                </div>
+            </div>
+
+            <!-- メニュー切り替えタブ -->
+            <div class="grid grid-cols-4 gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 text-xs font-bold">
+                <button onclick="switchHomeTab('deploy')" id="tabDeployBtn" class="py-2 rounded-xl bg-cyan-500 text-slate-950 shadow-md">出撃</button>
+                <button onclick="switchHomeTab('custom')" id="tabCustomBtn" class="py-2 rounded-xl text-slate-400 hover:text-white">カスタム</button>
+                <button onclick="switchHomeTab('upgrade')" id="tabUpgradeBtn" class="py-2 rounded-xl text-slate-400 hover:text-white">強化</button>
+                <button onclick="switchHomeTab('gacha')" id="tabGachaBtn" class="py-2 rounded-xl text-slate-400 hover:text-white">パーツガチャ</button>
+            </div>
+
+            <!-- TAB 1: 出撃画面 -->
+            <div id="tabDeploy" class="space-y-4">
+                <!-- 作戦モード選択 -->
+                <div class="bg-slate-900/80 p-3 rounded-2xl border border-slate-800 space-y-2">
+                    <span class="text-xs text-slate-400 font-semibold block">作戦モード選択</span>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="selectGameMode('normal')" id="modeNormalBtn" class="py-2 px-1 text-xs font-bold rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 transition">
+                            通常ミッション
+                        </button>
+                        <button onclick="selectGameMode('time')" id="modeTimeBtn" class="py-2 px-1 text-xs font-bold rounded-xl bg-slate-950 text-slate-400 border border-slate-800 hover:text-white transition">
+                            タイムアタック
+                        </button>
+                        <button onclick="selectGameMode('free')" id="modeFreeBtn" class="py-2 px-1 text-xs font-bold rounded-xl bg-slate-950 text-slate-400 border border-slate-800 hover:text-white transition">
+                            自由飛行
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 自機・キャラ変更セレクター＆ステータス表示 -->
+                <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 space-y-3">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-400 font-semibold">出撃機体（キャラ）の選択</span>
+                        <span id="ownedCountText" class="text-cyan-400 font-bold">所持: 1機</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
+                        <button onclick="changeSelectedShip(-1)" class="p-2 bg-slate-900 hover:bg-slate-800 text-cyan-400 rounded-lg border border-slate-700 active:scale-95 transition">
+                            <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                        </button>
+                        <div class="text-center truncate">
+                            <h3 id="currentShipName" class="text-base font-black text-cyan-400 truncate">Viper Mark-I</h3>
+                            <span id="currentShipRarity" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 inline-block mt-0.5">N</span>
+                        </div>
+                        <button onclick="changeSelectedShip(1)" class="p-2 bg-slate-900 hover:bg-slate-800 text-cyan-400 rounded-lg border border-slate-700 active:scale-95 transition">
+                            <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <!-- キャラストラテジー 4大パラメータ -->
+                    <div class="grid grid-cols-2 gap-2 text-[10px] bg-slate-950/40 p-2 rounded-xl border border-slate-800/80">
+                        <div class="flex justify-between text-slate-300"><span>ATK (攻撃力):</span> <strong id="statAtk" class="text-amber-400 font-mono-num">20</strong></div>
+                        <div class="flex justify-between text-slate-300"><span>DEF (耐久):</span> <strong id="statDef" class="text-cyan-400 font-mono-num">100</strong></div>
+                        <div class="flex justify-between text-slate-300"><span>SPD (機動):</span> <strong id="statSpd" class="text-emerald-400 font-mono-num">1.0</strong></div>
+                        <div class="flex justify-between text-slate-300"><span>SHARP (精密):</span> <strong id="statSharp" class="text-purple-400 font-mono-num">10</strong></div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center text-xs px-1">
+                    <span class="text-slate-400">最高ハイスコア</span>
+                    <span id="bestScoreLobby" class="text-base font-black text-white font-mono-num">0</span>
+                </div>
+
+                <button id="startBtn" onclick="startGame()" class="w-full py-4 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-black rounded-2xl text-base transition transform active:scale-95 shadow-xl shadow-cyan-500/20 flex items-center justify-center gap-2">
+                    <i data-lucide="play" class="w-5 h-5"></i>
+                    ミッション出撃！
+                </button>
+            </div>
+
+            <!-- NEW TAB: カスタマイズ画面 -->
+            <div id="tabCustom" class="space-y-4 hidden">
+                <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 space-y-3">
+                    <h3 class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                        <i data-lucide="wrench" class="w-4 h-4"></i> 機体＆パーツカスタマイズ
+                    </h3>
+                    <p class="text-[10px] text-slate-400">ガチャで手に入れたパーツを機体に装着して強化しよう！</p>
+                    
+                    <div class="space-y-2 pt-2">
+                        <!-- メインパーツ装着選択 -->
+                        <div class="flex justify-between items-center bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-xs">
+                            <span class="text-slate-300 font-semibold">主砲（キャノン）</span>
+                            <select id="equipCanonSelect" onchange="equipPart('canon', this.value)" class="bg-slate-900 text-cyan-400 border border-slate-700 rounded-lg px-2 py-1 focus:outline-none">
+                                <option value="standard">標準ビーム砲</option>
+                                <option value="twin" id="optTwinCanon" disabled>ツインプラズマ (要ガチャ)</option>
+                                <option value="mega" id="optMegaCanon" disabled>メガ粒子砲 (要ガチャ)</option>
+                            </select>
+                        </div>
+                        <div class="flex justify-between items-center bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-xs">
+                            <span class="text-slate-300 font-semibold">装甲（アーマー）</span>
+                            <select id="equipArmorSelect" onchange="equipPart('armor', this.value)" class="bg-slate-900 text-cyan-400 border border-slate-700 rounded-lg px-2 py-1 focus:outline-none">
+                                <option value="standard">ノーマル装甲</option>
+                                <option value="titanium" id="optTitaniumArmor" disabled>チタン合金プレート (要ガチャ)</option>
+                            </select>
+                        </div>
+                        <div class="flex justify-between items-center bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-xs">
+                            <span class="text-slate-300 font-semibold">エフェクト</span>
+                            <select id="equipEffectSelect" onchange="equipPart('effect', this.value)" class="bg-slate-900 text-cyan-400 border border-slate-700 rounded-lg px-2 py-1 focus:outline-none">
+                                <option value="cyan">シアンオーラ</option>
+                                <option value="red" id="optRedTrail" disabled>クリムゾン・トレイル (要ガチャ)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: 機体＆パーツ強化 -->
+            <div id="tabUpgrade" class="space-y-3 hidden">
+                <div class="bg-slate-900/60 p-3 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+                    <div>
+                        <div class="font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="shield" class="w-4 h-4 text-cyan-400"></i> 装甲プレート [DEF] <span id="lvlHp" class="text-cyan-400">Lv.1</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400">最大HP/シールドを強化</p>
+                    </div>
+                    <button onclick="buyUpgrade('hp')" id="btnUpHp" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl transition">
+                        100 C
+                    </button>
+                </div>
+
+                <div class="bg-slate-900/60 p-3 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+                    <div>
+                        <div class="font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i> メインキャノン [ATK] <span id="lvlAtk" class="text-amber-400">Lv.1</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400">与えるダメージ量をアップ</p>
+                    </div>
+                    <button onclick="buyUpgrade('atk')" id="btnUpAtk" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl transition">
+                        150 C
+                    </button>
+                </div>
+
+                <div class="bg-slate-900/60 p-3 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+                    <div>
+                        <div class="font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="gauge" class="w-4 h-4 text-emerald-400"></i> スラスターコア [SPD] <span id="lvlSpeed" class="text-emerald-400">Lv.1</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400">旋回＆移動速度を強化</p>
+                    </div>
+                    <button onclick="buyUpgrade('speed')" id="btnUpSpeed" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl transition">
+                        120 C
+                    </button>
+                </div>
+
+                <div class="bg-slate-900/60 p-3 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+                    <div>
+                        <div class="font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="crosshair" class="w-4 h-4 text-purple-400"></i> FCS照準制御 [SHARP] <span id="lvlSharp" class="text-purple-400">Lv.1</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400">精密射撃＆クリティカル率アップ</p>
+                    </div>
+                    <button onclick="buyUpgrade('sharp')" id="btnUpSharp" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl transition">
+                        130 C
+                    </button>
+                </div>
+            </div>
+
+            <!-- TAB 3: パーツガチャ -->
+            <div id="tabGacha" class="space-y-4 hidden text-center">
+                <div class="bg-gradient-to-b from-indigo-950/80 to-slate-900 p-6 rounded-2xl border border-indigo-500/40 space-y-3">
+                    <i data-lucide="sparkles" class="w-10 h-10 text-amber-400 mx-auto animate-bounce"></i>
+                    <h3 class="text-base font-black text-white">サイバー機体＆パーツガチャ</h3>
+                    <p class="text-xs text-slate-400">1回 <strong>200 コイン</strong> で新機体や強力パーツを解禁！</p>
+                    
+                    <button onclick="drawGacha()" class="w-full py-3 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black rounded-xl text-sm transition shadow-lg shadow-amber-500/20">
+                        パーツガチャを引く (200 C)
+                    </button>
+                </div>
+
+                <div id="gachaResult" class="hidden bg-slate-900/90 p-4 rounded-2xl border border-cyan-500/50 text-xs animate-fade-in"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- リザルトオーバーレイ -->
+    <div id="resultOverlay" class="absolute inset-0 z-30 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 hidden">
+        <div class="glass max-w-sm w-full rounded-3xl p-6 text-center border border-slate-800 space-y-4">
+            <h2 id="resultTitle" class="text-2xl font-black text-white tracking-wider">MISSION FAILED</h2>
+            
+            <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <div>
+                    <span class="text-[10px] text-slate-400 block">FINAL SCORE</span>
+                    <span id="finalScore" class="text-2xl font-black text-cyan-400 font-mono-num">0</span>
+                </div>
+                <div class="pt-2 border-t border-slate-800 flex justify-between items-center text-xs">
+                    <span class="text-slate-400">獲得コイン</span>
+                    <span id="gainedCoins" class="font-bold text-amber-400 font-mono-num">+0 C</span>
+                </div>
+            </div>
+
+            <button onclick="backToLobby()" class="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-xl text-sm transition">
+                基地へ帰還
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Safe Lucide init
+        function refreshIcons() {
+            if (typeof lucide !== 'undefined' && lucide.createIcons) {
+                try { lucide.createIcons(); } catch(e){}
+            }
+        }
+
+        const SafeStorage = {
+            getItem(key) { try { return localStorage.getItem(key); } catch (e) { return null; } },
+            setItem(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+        };
+
+        // セーブデータオブジェクトを最上部でグローバル宣言（ReferenceError対策）
+        let saveData = {
+            coins: 0,
+            bestScore: 0,
+            upgrades: { hp: 1, atk: 1, speed: 1, sharp: 1 },
+            equippedShip: 'normal',
+            ownedShips: ['normal'],
+            equippedParts: { canon: 'standard', armor: 'standard', effect: 'cyan' }
+        };
+
+        // 機体マスターデータ（グローバル定義）
+        const SHIP_DATA = {
+            normal: { name: 'Viper Mark-I', rarity: 'N', color: 0x22d3ee, wingColor: 0x0284c7, hpBonus: 0, atkBonus: 0, spdBonus: 0 },
+            rare: { name: 'Falcon Neo', rarity: 'SR', color: 0xc084fc, wingColor: 0x9333ea, hpBonus: 30, atkBonus: 5, spdBonus: 0.15 },
+            legend: { name: 'Hyperion Omega', rarity: 'SSR', color: 0xfacc15, wingColor: 0xeab308, hpBonus: 70, atkBonus: 15, spdBonus: 0.3 }
+        };
+
+        const PARTS_DATA = {
+            twin_canon: { name: 'ツインプラズマ', type: 'canon', id: 'twin' },
+            mega_canon: { name: 'メガ粒子砲', type: 'canon', id: 'mega' },
+            titanium_armor: { name: 'チタン合金プレート', type: 'armor', id: 'titanium' },
+            red_trail: { name: 'クリムゾン・トレイル', type: 'effect', id: 'red' }
+        };
+
+        // 状態変数定義
+        let isPlaying = false;
+        let isPaused = false;
+        let score = 0;
+        let coinsGained = 0;
+        let currentWave = 1;
+        let currentStage = 1;
+        let hp = 100;
+        let maxHp = 100;
+
+        // Three.js 関連のグローバル変数
+        let scene, camera, renderer, playerShip;
+        let lasers = [], enemies = [], particles = [];
+
+        // プレイヤーの宇宙船（自機・飛行機）を作成する関数
+        function createPlayerShip() {
+            if (!scene) return;
+            if (playerShip) scene.remove(playerShip);
+
+            const shipInfo = SHIP_DATA[saveData.equippedShip] || SHIP_DATA.normal;
+            playerShip = new THREE.Group();
+
+            // 機体本体（ノーズ・胴体）
+            const bodyGeo = new THREE.ConeGeometry(1.3, 4.5, 5);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.2, metalness: 0.9 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.rotation.x = -Math.PI / 2;
+            playerShip.add(body);
+
+            // コックピット（発光）
+            const cockpitGeo = new THREE.SphereGeometry(0.65, 12, 12);
+            const cockpitMat = new THREE.MeshBasicMaterial({ color: shipInfo.color });
+            const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
+            cockpit.position.set(0, 0.45, 0.3);
+            cockpit.scale.set(1, 0.6, 1.5);
+            playerShip.add(cockpit);
+
+            // メインウイング（主翼）
+            const wingGeo = new THREE.BoxGeometry(5.4, 0.18, 1.5);
+            const wingMat = new THREE.MeshStandardMaterial({ color: shipInfo.wingColor, roughness: 0.3, metalness: 0.7 });
+            const wing = new THREE.Mesh(wingGeo, wingMat);
+            wing.position.set(0, 0, 0.7);
+            playerShip.add(wing);
+
+            // ウイング端の発光バー
+            const tipGeo = new THREE.BoxGeometry(0.3, 0.3, 1.6);
+            const tipMat = new THREE.MeshBasicMaterial({ color: shipInfo.color });
+            const tipL = new THREE.Mesh(tipGeo, tipMat);
+            tipL.position.set(-2.7, 0, 0.7);
+            playerShip.add(tipL);
+
+            const tipR = new THREE.Mesh(tipGeo, tipMat);
+            tipR.position.set(2.7, 0, 0.7);
+            playerShip.add(tipR);
+
+            // エンジンリング
+            const ringGeo = new THREE.RingGeometry(0.7, 1.1, 16);
+            const ringMat = new THREE.MeshBasicMaterial({ color: saveData.equippedParts?.effect === 'red' ? 0xf43f5e : shipInfo.color, side: THREE.DoubleSide });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.set(0, 0, 1.7);
+            playerShip.add(ring);
+
+            scene.add(playerShip);
+            playerShip.position.set(0, 0, 0);
+        }
+
+        // タブ切り替え関数 (ReferenceError 対策)
+        function switchHomeTab(tabName) {
+            const tabs = ['deploy', 'custom', 'upgrade', 'gacha'];
+            tabs.forEach(t => {
+                const content = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}`);
+                const btn = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
+                if (!content || !btn) return;
+
+                if (t === tabName) {
+                    content.classList.remove('hidden');
+                    btn.className = 'py-2 rounded-xl bg-cyan-500 text-slate-950 shadow-md';
+                } else {
+                    content.classList.add('hidden');
+                    btn.className = 'py-2 rounded-xl text-slate-400 hover:text-white';
+                }
+            });
+        }
+
+        // パーツ装備関数
+        function equipPart(category, value) {
+            if (!saveData.equippedParts) saveData.equippedParts = {};
+            saveData.equippedParts[category] = value;
+            saveGame();
+            updateLobbyUI();
+        }
+
+        // 自機（キャラ）変更セレクター関数 (ReferenceError 対策)
+        function changeSelectedShip(dir) {
+            const shipKeys = Object.keys(SHIP_DATA);
+            const currentIdx = shipKeys.indexOf(saveData.equippedShip || 'normal');
+            let nextIdx = (currentIdx + dir + shipKeys.length) % shipKeys.length;
+            
+            // 所持している機体に切り替わるまでループ
+            if (saveData.ownedShips && saveData.ownedShips.length > 0) {
+                while (!saveData.ownedShips.includes(shipKeys[nextIdx])) {
+                    nextIdx = (nextIdx + dir + shipKeys.length) % shipKeys.length;
+                }
+            }
+            
+            saveData.equippedShip = shipKeys[nextIdx];
+            saveGame();
+            updateLobbyUI();
+            if (typeof createPlayerShip === 'function') {
+                createPlayerShip();
+            }
+        }
+
+        // ゲーム開始関数 (startGame ReferenceError 対策)
+        function startGame() {
+            score = 0;
+            coinsGained = 0;
+            currentWave = 1;
+            currentStage = 1;
+
+            const shipInfo = SHIP_DATA[saveData.equippedShip] || SHIP_DATA.normal;
+            const hpLvl = saveData.upgrades?.hp || 1;
+            maxHp = getStats().def;
+            hp = maxHp;
+
+            resetRun();
+
+            isPlaying = true;
+            isPaused = false;
+
+            const homeOverlay = document.getElementById('homeOverlay');
+            const resultOverlay = document.getElementById('resultOverlay');
+            const inGameUI = document.getElementById('inGameUI');
+
+            if (homeOverlay) homeOverlay.classList.add('hidden');
+            if (resultOverlay) resultOverlay.classList.add('hidden');
+            if (inGameUI) inGameUI.classList.remove('hidden');
+
+            updateHUD();
+            if (typeof createPlayerShip === 'function') {
+                createPlayerShip();
+            }
+        }
+
+        function togglePause() {
+            if (!isPlaying) return;
+            isPaused = !isPaused;
+            const pauseEl = document.getElementById('pauseOverlay');
+            if (pauseEl) {
+                if (isPaused) pauseEl.classList.remove('hidden');
+                else pauseEl.classList.add('hidden');
+            }
+        }
+
+        function quitToLobby() {
+            isPlaying = false;
+            isPaused = false;
+            const pauseEl = document.getElementById('pauseOverlay');
+            const inGameUI = document.getElementById('inGameUI');
+            const homeOverlay = document.getElementById('homeOverlay');
+
+            if (pauseEl) pauseEl.classList.add('hidden');
+            if (inGameUI) inGameUI.classList.add('hidden');
+            if (homeOverlay) homeOverlay.classList.remove('hidden');
+            updateLobbyUI();
+        }
+
+        function backToLobby() {
+            const resultOverlay = document.getElementById('resultOverlay');
+            const homeOverlay = document.getElementById('homeOverlay');
+            if (resultOverlay) resultOverlay.classList.add('hidden');
+            if (homeOverlay) homeOverlay.classList.remove('hidden');
+            updateLobbyUI();
+        }
+
+        // ===== 以下、欠けていた処理を補完 =====
+        const SAVE_KEY = 'cyberStarfighter3d_save_v1';
+        const BX = 14, BY = 8;
+        const UP_BASE = { hp: 100, atk: 150, speed: 120, sharp: 130 };
+        const UP_MAX = 10;
+        const $ = id => document.getElementById(id);
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+        let gameMode = 'normal';
+        let timeLeft = 60, kills = 0, spawnT = 0, fireT = 0, trailT = 0;
+        let boss = null, bossMaxHp = 1;
+        let tx = 0, ty = 0, firing = false;
+        const keys = {};
+        let eBullets = [];
+        let stars, clock, laserGeo, enemyGeo, enemyMat, partGeo, ebGeo;
+        const matCache = {};
+        const matFor = c => matCache[c] || (matCache[c] = new THREE.MeshBasicMaterial({ color: c }));
+
+        // ---- セーブ / ロード ----
+        function saveGame() { SafeStorage.setItem(SAVE_KEY, JSON.stringify(saveData)); }
+        function loadGame() {
+            if (!saveData.ownedParts) saveData.ownedParts = [];
+            try {
+                const raw = SafeStorage.getItem(SAVE_KEY);
+                if (!raw) return;
+                const d = JSON.parse(raw);
+                saveData = {
+                    ...saveData, ...d,
+                    upgrades: { ...saveData.upgrades, ...(d.upgrades || {}) },
+                    equippedParts: { ...saveData.equippedParts, ...(d.equippedParts || {}) },
+                    ownedShips: Array.isArray(d.ownedShips) && d.ownedShips.length ? d.ownedShips : ['normal'],
+                    ownedParts: Array.isArray(d.ownedParts) ? d.ownedParts : []
+                };
+                if (!SHIP_DATA[saveData.equippedShip] || !saveData.ownedShips.includes(saveData.equippedShip)) saveData.equippedShip = 'normal';
+            } catch (e) {}
+        }
+
+        // ---- ステータス計算 ----
+        function getStats() {
+            const s = SHIP_DATA[saveData.equippedShip] || SHIP_DATA.normal;
+            const u = saveData.upgrades, p = saveData.equippedParts;
+            return {
+                atk: 20 + (u.atk - 1) * 5 + s.atkBonus + (p.canon === 'mega' ? 15 : p.canon === 'twin' ? 5 : 0),
+                def: 100 + (u.hp - 1) * 20 + s.hpBonus + (p.armor === 'titanium' ? 40 : 0),
+                spd: +(1 + (u.speed - 1) * 0.1 + s.spdBonus).toFixed(2),
+                sharp: 10 + (u.sharp - 1) * 3
+            };
+        }
+
+        // ---- ロビーUI ----
+        function hideRunUI() {
+            ['countdownOverlay', 'bossHpContainer'].forEach(id => $(id).classList.add('hidden'));
+        }
+        function updateLobbyUI() {
+            hideRunUI();
+            const s = SHIP_DATA[saveData.equippedShip] || SHIP_DATA.normal;
+            const st = getStats(), u = saveData.upgrades;
+            $('lobbyCoins').textContent = saveData.coins;
+            $('bestScoreLobby').textContent = saveData.bestScore;
+            $('ownedCountText').textContent = `所持: ${saveData.ownedShips.length}機`;
+            $('currentShipName').textContent = s.name;
+            $('currentShipRarity').textContent = s.rarity;
+            $('statAtk').textContent = st.atk;
+            $('statDef').textContent = st.def;
+            $('statSpd').textContent = st.spd.toFixed(2);
+            $('statSharp').textContent = st.sharp;
+            [['hp', 'lvlHp', 'btnUpHp'], ['atk', 'lvlAtk', 'btnUpAtk'], ['speed', 'lvlSpeed', 'btnUpSpeed'], ['sharp', 'lvlSharp', 'btnUpSharp']].forEach(([k, l, b]) => {
+                const lv = u[k], btn = $(b);
+                $(l).textContent = `Lv.${lv}`;
+                if (lv >= UP_MAX) { btn.textContent = 'MAX'; btn.disabled = true; btn.classList.add('opacity-40'); return; }
+                const c = UP_BASE[k] * lv, ok = saveData.coins >= c;
+                btn.textContent = `${c} C`;
+                btn.disabled = !ok;
+                btn.classList.toggle('opacity-40', !ok);
+            });
+            [['optTwinCanon', 'twin_canon'], ['optMegaCanon', 'mega_canon'], ['optTitaniumArmor', 'titanium_armor'], ['optRedTrail', 'red_trail']].forEach(([id, key]) => {
+                const own = saveData.ownedParts.includes(key), o = $(id);
+                o.disabled = !own;
+                o.textContent = PARTS_DATA[key].name + (own ? '' : ' (要ガチャ)');
+            });
+            $('equipCanonSelect').value = saveData.equippedParts.canon;
+            $('equipArmorSelect').value = saveData.equippedParts.armor;
+            $('equipEffectSelect').value = saveData.equippedParts.effect;
+            refreshIcons();
+        }
+
+        function selectGameMode(m) {
+            gameMode = m;
+            const on = 'py-2 px-1 text-xs font-bold rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 transition';
+            const off = 'py-2 px-1 text-xs font-bold rounded-xl bg-slate-950 text-slate-400 border border-slate-800 hover:text-white transition';
+            [['normal', 'modeNormalBtn'], ['time', 'modeTimeBtn'], ['free', 'modeFreeBtn']].forEach(([k, id]) => $(id).className = k === m ? on : off);
+        }
+
+        function buyUpgrade(type) {
+            const lv = saveData.upgrades[type];
+            if (lv >= UP_MAX) return;
+            const cost = UP_BASE[type] * lv;
+            if (saveData.coins < cost) return;
+            saveData.coins -= cost;
+            saveData.upgrades[type]++;
+            saveGame();
+            updateLobbyUI();
+        }
+
+        function drawGacha() {
+            const box = $('gachaResult');
+            box.classList.remove('hidden');
+            if (saveData.coins < 200) {
+                box.innerHTML = '<span class="text-rose-400 font-bold">コインが足りません（200 C 必要）</span>';
+                return;
+            }
+            saveData.coins -= 200;
+            const r = Math.random();
+            let name, dup = false;
+            if (r < 0.6) {
+                const ks = Object.keys(PARTS_DATA), k = ks[Math.floor(Math.random() * ks.length)];
+                name = 'パーツ: ' + PARTS_DATA[k].name;
+                if (saveData.ownedParts.includes(k)) dup = true; else saveData.ownedParts.push(k);
+            } else {
+                const id = r < 0.9 ? 'rare' : 'legend';
+                name = `機体 [${SHIP_DATA[id].rarity}]: ${SHIP_DATA[id].name}`;
+                if (saveData.ownedShips.includes(id)) dup = true; else saveData.ownedShips.push(id);
+            }
+            if (dup) saveData.coins += 100;
+            box.innerHTML = `<div class="${dup ? 'text-slate-300' : 'text-amber-400'} font-black text-sm">${dup ? 'DUPLICATE' : 'NEW!'}</div><div class="text-white font-bold mt-1">${name}</div>` +
+                (dup ? '<div class="text-slate-400 mt-1">重複のため 100 C 返還</div>' : '');
+            saveGame();
+            updateLobbyUI();
+        }
+
+        // ---- ゲーム進行 ----
+        function resetRun() {
+            [lasers, enemies, eBullets, particles].forEach(a => { a.forEach(o => scene.remove(o.mesh)); a.length = 0; });
+            if (boss) { scene.remove(boss.mesh); boss = null; }
+            timeLeft = 60; kills = 0; spawnT = 1; fireT = 0; tx = 0; ty = 0;
+            hideRunUI();
+            $('modeLabel').textContent = gameMode === 'time' ? 'TIME' : gameMode === 'free' ? 'MODE' : 'STAGE';
+        }
+
+        function updateHUD() {
+            $('scoreDisplay').textContent = score;
+            $('coinDisplay').textContent = coinsGained;
+            $('waveDisplay').textContent = gameMode === 'time'
+                ? `${Math.floor(Math.max(0, timeLeft) / 60)}:${String(Math.ceil(Math.max(0, timeLeft)) % 60).padStart(2, '0')}`
+                : gameMode === 'free' ? 'FREE' : `STAGE ${currentStage}`;
+            $('hpBar').style.width = Math.max(0, hp / maxHp * 100) + '%';
+        }
+
+        function endGame() {
+            isPlaying = false; isPaused = false;
+            ['pauseOverlay', 'inGameUI'].forEach(id => $(id).classList.add('hidden'));
+            hideRunUI();
+            const earned = coinsGained + Math.floor(score / 20);
+            saveData.coins += earned;
+            if (score > saveData.bestScore) saveData.bestScore = score;
+            saveGame();
+            $('resultTitle').textContent = gameMode === 'time' ? 'TIME UP!' : 'MISSION FAILED';
+            $('finalScore').textContent = score;
+            $('gainedCoins').textContent = `+${earned} C`;
+            $('resultOverlay').classList.remove('hidden');
+        }
+
+        function damage(n) {
+            if (gameMode === 'free') return;
+            hp -= n;
+            if (hp <= 0) { hp = 0; burst(playerShip.position, 0x22d3ee, 30, 25); endGame(); }
+        }
+
+        // ---- エフェクト / 弾 / 敵 ----
+        function burst(pos, color, n = 10, sp = 14) {
+            for (let i = 0; i < n && particles.length < 300; i++) {
+                const m = new THREE.Mesh(partGeo, matFor(color));
+                m.position.copy(pos);
+                scene.add(m);
+                particles.push({ mesh: m, vel: new THREE.Vector3((Math.random() - .5) * sp, (Math.random() - .5) * sp, (Math.random() - .5) * sp), life: .5, max: .5 });
+            }
+        }
+
+        function fire() {
+            const st = getStats(), p = saveData.equippedParts.canon;
+            const color = p === 'mega' ? 0xfacc15 : p === 'twin' ? 0xc084fc : 0x22d3ee;
+            (p === 'twin' ? [-0.9, 0.9] : [0]).forEach(o => {
+                const m = new THREE.Mesh(laserGeo, matFor(color));
+                if (p === 'mega') m.scale.set(2.2, 2.2, 1);
+                m.position.set(playerShip.position.x + o, playerShip.position.y, playerShip.position.z - 3);
+                scene.add(m);
+                const crit = Math.random() * 100 < st.sharp;
+                lasers.push({ mesh: m, dmg: st.atk * (crit ? 2 : 1), r: p === 'mega' ? 2.6 : 1.9 });
+            });
+            return p === 'mega' ? 0.32 : p === 'twin' ? 0.2 : 0.17;
+        }
+
+        function spawnEnemy() {
+            const m = new THREE.Mesh(enemyGeo, enemyMat);
+            const bx = (Math.random() - .5) * BX * 1.6;
+            m.position.set(bx, (Math.random() - .5) * BY * 1.6, -150);
+            scene.add(m);
+            enemies.push({ mesh: m, hp: 18 + currentStage * 10, bx, t: Math.random() * 6, f: 1 + Math.random() * 1.5, amp: Math.random() * 4, speed: (28 + currentStage * 3) * (gameMode === 'time' ? 1.2 : 1) });
+        }
+
+        function spawnBoss() {
+            const m = new THREE.Mesh(new THREE.DodecahedronGeometry(5), new THREE.MeshStandardMaterial({ color: 0x9f1239, emissive: 0x4c0519, flatShading: true, metalness: 0.5 }));
+            m.position.set(0, 0, -110);
+            scene.add(m);
+            bossMaxHp = 500 + currentStage * 300;
+            boss = { mesh: m, hp: bossMaxHp, t: 0, fireT: 1.5 };
+            $('bossHpContainer').classList.remove('hidden');
+        }
+
+        function killEnemy(e) {
+            burst(e.mesh.position, 0xf43f5e, 14);
+            score += 100;
+            coinsGained += 1 + Math.floor(Math.random() * 3);
+            kills++;
+        }
+
+        function rm(arr, i) { scene.remove(arr[i].mesh); arr.splice(i, 1); }
+
+        // ---- 毎フレーム更新 ----
+        function update(dt) {
+            const st = getStats();
+            const sp = st.spd * 28 * dt;
+            if (keys.ArrowLeft || keys.KeyA) tx -= sp;
+            if (keys.ArrowRight || keys.KeyD) tx += sp;
+            if (keys.ArrowUp || keys.KeyW) ty += sp;
+            if (keys.ArrowDown || keys.KeyS) ty -= sp;
+            tx = clamp(tx, -BX, BX); ty = clamp(ty, -BY, BY);
+
+            const f = 1 - Math.exp(-8 * st.spd * dt), px = playerShip.position.x;
+            playerShip.position.x += (tx - px) * f;
+            playerShip.position.y += (ty - playerShip.position.y) * f;
+            playerShip.rotation.z = clamp(-(tx - px) * 0.08, -0.6, 0.6);
+            playerShip.rotation.y = 0;
+            camera.position.set(playerShip.position.x * 0.5, playerShip.position.y * 0.5 + 3, 13);
+            camera.lookAt(playerShip.position.x * 0.6, playerShip.position.y * 0.6, -20);
+
+            // 発射
+            fireT -= dt;
+            if ((firing || keys.Space) && fireT <= 0) fireT = fire();
+
+            // エンジントレイル
+            trailT -= dt;
+            if (trailT <= 0) {
+                trailT = 0.05;
+                const tp = playerShip.position.clone(); tp.z += 2;
+                burst(tp, saveData.equippedParts.effect === 'red' ? 0xf43f5e : 0x22d3ee, 1, 2);
+            }
+
+            // 出現管理
+            if (!boss) {
+                spawnT -= dt;
+                if (spawnT <= 0) {
+                    spawnEnemy();
+                    spawnT = gameMode === 'time' ? 0.45 : gameMode === 'free' ? 1.2 : Math.max(0.35, 1.1 - currentStage * 0.1);
+                }
+                if (gameMode === 'normal' && kills >= 12 + currentStage * 3) spawnBoss();
+            }
+
+            // 自機弾
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                const l = lasers[i];
+                l.mesh.position.z -= 120 * dt;
+                let hit = false;
+                for (let j = enemies.length - 1; j >= 0 && !hit; j--) {
+                    const e = enemies[j];
+                    if (l.mesh.position.distanceTo(e.mesh.position) < l.r) {
+                        hit = true; e.hp -= l.dmg;
+                        burst(l.mesh.position, 0xffffff, 3, 8);
+                        if (e.hp <= 0) { killEnemy(e); rm(enemies, j); }
+                    }
+                }
+                if (!hit && boss && l.mesh.position.distanceTo(boss.mesh.position) < 5.5 + l.r * 0.3) {
+                    hit = true; boss.hp -= l.dmg;
+                    burst(l.mesh.position, 0xfbbf24, 4, 10);
+                    score += 5;
+                }
+                if (hit || l.mesh.position.z < -200) rm(lasers, i);
+            }
+
+            // 敵
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                e.t += dt;
+                e.mesh.position.z += e.speed * dt;
+                e.mesh.position.x = e.bx + Math.sin(e.t * e.f) * e.amp;
+                e.mesh.rotation.x += dt * 2; e.mesh.rotation.y += dt * 1.5;
+                if (e.mesh.position.distanceTo(playerShip.position) < 2.8) {
+                    burst(e.mesh.position, 0xf43f5e, 14); damage(20); rm(enemies, i);
+                    if (!isPlaying) return;
+                } else if (e.mesh.position.z > 14) rm(enemies, i);
+            }
+
+            // ボス
+            if (boss) {
+                boss.t += dt;
+                boss.mesh.position.z = Math.min(-60, boss.mesh.position.z + 25 * dt);
+                boss.mesh.position.x = Math.sin(boss.t * 0.8) * 10;
+                boss.mesh.position.y = Math.cos(boss.t * 0.6) * 4;
+                boss.mesh.rotation.x += dt * 0.4; boss.mesh.rotation.y += dt * 0.6;
+                boss.fireT -= dt;
+                if (boss.fireT <= 0 && boss.mesh.position.z >= -60) {
+                    boss.fireT = 1.2;
+                    const dir = new THREE.Vector3().subVectors(playerShip.position, boss.mesh.position).normalize();
+                    [-0.18, 0, 0.18].forEach(a => {
+                        const m = new THREE.Mesh(ebGeo, matFor(0xfb7185));
+                        m.position.copy(boss.mesh.position);
+                        scene.add(m);
+                        eBullets.push({ mesh: m, vel: dir.clone().add(new THREE.Vector3(a, 0, 0)).normalize().multiplyScalar(45) });
+                    });
+                }
+                const pct = Math.max(0, boss.hp / bossMaxHp * 100);
+                $('bossHpBar').style.width = pct + '%';
+                $('bossHpPercent').textContent = Math.ceil(pct) + '%';
+                if (boss.hp <= 0) {
+                    burst(boss.mesh.position, 0xfbbf24, 60, 40);
+                    scene.remove(boss.mesh); boss = null;
+                    score += 1000 * currentStage;
+                    coinsGained += 30 + 10 * currentStage;
+                    currentStage++; kills = 0;
+                    $('bossHpContainer').classList.add('hidden');
+                }
+            }
+
+            // 敵弾
+            for (let i = eBullets.length - 1; i >= 0; i--) {
+                const b = eBullets[i];
+                b.mesh.position.addScaledVector(b.vel, dt);
+                if (b.mesh.position.distanceTo(playerShip.position) < 1.6) {
+                    burst(b.mesh.position, 0xfb7185, 6); damage(10); rm(eBullets, i);
+                    if (!isPlaying) return;
+                } else if (b.mesh.position.z > 20 || b.mesh.position.z < -200) rm(eBullets, i);
+            }
+
+            // タイムアタック
+            if (gameMode === 'time') {
+                timeLeft -= dt;
+                const cd = $('countdownOverlay');
+                if (timeLeft <= 10 && timeLeft > 0) {
+                    cd.classList.remove('hidden');
+                    const n = String(Math.ceil(timeLeft));
+                    if ($('countdownText').textContent !== n) $('countdownText').textContent = n;
+                }
+                if (timeLeft <= 0) { endGame(); return; }
+            }
+
+            updateHUD();
+        }
+
+        function updateParticles(dt) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life -= dt;
+                if (p.life <= 0) { rm(particles, i); continue; }
+                p.mesh.position.addScaledVector(p.vel, dt);
+                p.mesh.scale.setScalar(p.life / p.max);
+            }
+        }
+
+        // ---- Three.js 初期化 & メインループ ----
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x030712);
+            scene.fog = new THREE.Fog(0x030712, 60, 160);
+            camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 300);
+            camera.position.set(0, 3, 13);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+            renderer.setSize(innerWidth, innerHeight);
+            $('canvasContainer').appendChild(renderer.domElement);
+            scene.add(new THREE.AmbientLight(0x8899bb, 0.8));
+            const dl = new THREE.DirectionalLight(0xffffff, 1.1);
+            dl.position.set(5, 10, 8);
+            scene.add(dl);
+
+            laserGeo = new THREE.BoxGeometry(0.25, 0.25, 2.5);
+            enemyGeo = new THREE.OctahedronGeometry(1.5);
+            enemyMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0x7f1d1d, flatShading: true });
+            partGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+            ebGeo = new THREE.SphereGeometry(0.45, 8, 8);
+
+            const n = 700, pos = new Float32Array(n * 3);
+            for (let i = 0; i < n; i++) {
+                pos[i * 3] = (Math.random() - .5) * 200;
+                pos[i * 3 + 1] = (Math.random() - .5) * 120;
+                pos[i * 3 + 2] = -Math.random() * 200 + 20;
+            }
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            stars = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: 0.6, transparent: true, opacity: 0.8 }));
+            scene.add(stars);
+
+            clock = new THREE.Clock();
+            createPlayerShip();
+            window.addEventListener('resize', () => {
+                camera.aspect = innerWidth / innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(innerWidth, innerHeight);
+            });
+        }
+
+        function loop() {
+            requestAnimationFrame(loop);
+            const dt = Math.min(clock.getDelta(), 0.05);
+            const sa = stars.geometry.attributes.position;
+            for (let i = 0; i < sa.count; i++) {
+                let z = sa.getZ(i) + 60 * dt;
+                if (z > 20) z = -180;
+                sa.setZ(i, z);
+            }
+            sa.needsUpdate = true;
+
+            if (isPlaying && !isPaused) {
+                update(dt);
+                updateParticles(dt);
+            } else if (!isPlaying) {
+                camera.position.set(0, 3, 13); camera.lookAt(0, 0, 0);
+                playerShip.position.set(0, 0, 0); playerShip.rotation.z = 0;
+                playerShip.rotation.y += dt * 0.8;
+                updateParticles(dt);
+            }
+
+            const ch = $('crosshair');
+            if (isPlaying && !isPaused) {
+                const v = new THREE.Vector3(playerShip.position.x, playerShip.position.y, -40).project(camera);
+                ch.style.display = 'flex';
+                ch.style.left = ((v.x * 0.5 + 0.5) * innerWidth) + 'px';
+                ch.style.top = ((-v.y * 0.5 + 0.5) * innerHeight) + 'px';
+            } else ch.style.display = 'none';
+
+            renderer.render(scene, camera);
+        }
+
+        // ---- 入力 ----
+        function setTargetFromPointer(e) {
+            if (!isPlaying || isPaused) return;
+            tx = (e.clientX / innerWidth * 2 - 1) * BX;
+            ty = -(e.clientY / innerHeight * 2 - 1) * BY;
+        }
+        window.addEventListener('pointermove', setTargetFromPointer);
+        window.addEventListener('pointerdown', e => {
+            if (e.target.closest && e.target.closest('button')) return;
+            setTargetFromPointer(e);
+            if (isPlaying && !isPaused) firing = true;
+        });
+        window.addEventListener('pointerup', () => { firing = false; });
+        window.addEventListener('pointercancel', () => { firing = false; });
+        window.addEventListener('keydown', e => {
+            if (e.code === 'Escape') { togglePause(); return; }
+            if (e.code === 'Space') e.preventDefault();
+            keys[e.code] = true;
+        });
+        window.addEventListener('keyup', e => { keys[e.code] = false; });
+        window.addEventListener('blur', () => { firing = false; for (const k in keys) keys[k] = false; });
+
+        // ---- 起動 ----
+        loadGame();
+        initThree();
+        selectGameMode('normal');
+        updateLobbyUI();
+        loop();
+    </script>
+</body>
+</html>
